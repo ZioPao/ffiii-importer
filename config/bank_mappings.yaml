@@ -1,3 +1,13 @@
+# Global transfer rules — matched against any bank's transactions.
+# Define once here instead of repeating per bank.
+# `from_account_id` is optional: if set, the rule only fires when the source account matches.
+transfers:
+  - pattern: "transfer to savings"
+    to_account_id: "3"             # matches regardless of which bank CSV it comes from
+  - pattern: "^internal transfer"
+    from_account_id: "1"           # only when coming from account 1
+    to_account_id: "4"
+
 banks:
   # Example: single-amount column bank (positive = income, negative = expense)
   my_bank:

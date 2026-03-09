@@ -1,12 +1,13 @@
 firefly:
-  url: "https://firefly.example.com"  # no trailing slash
-  token: "your_personal_access_token"
+  url: "http://localhost:80"  # no trailing slash
+  token: "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiODJhYmViMzZiMTJhODY4Y2YyMDI3YmE1MDg2OGM1NGNiMWFjNGE1NGMzY2NkMjY2MGU4ZjJjOTkwNmQzY2QxY2ZiNmRkYzQ5MDI5MTQ3YmYiLCJpYXQiOjE3NzMwNTcxMDIuODc2NTQ0LCJuYmYiOjE3NzMwNTcxMDIuODc2NTQ1LCJleHAiOjE4MDQ1OTMxMDIuODU4MjQ3LCJzdWIiOiIxIiwic2NvcGVzIjpbXX0.mie2mFKhHJzWakJEfatCoQJ6wYU_RpXuxzMqCgXqk95m_Vp7RikJNkebFI7O2YXIpqPhU_uFHRcVqTx31EENClUcLUWxyfbKqDhLxU7KvKzhMOz3fdCXM4shXS3K5E2K5VFd5ac9_Y_OMS8oxCzQ3OAsq8XsQd1GAdRIOzA2BBpUosgHv6jDQCtNCJbiKoAGVJ30lDzj0NB6MVD36YHx7uA2-Wm5a4QM7x8idnQDIy9uZBNq8LzGJgnqducZEV8QVCTQdu4DQJcbpt2yqiJSWYStlVHnKKsnD7RTWGZ0iygY1dKZqCKMj9iTDzGICwZFvK_KMCJPtecNbjD-rFEzkkLJChrV-9cpkTtATl15E5sXG1eK8720DyYDB2fXaU9v1Sb-TdL_glWeFuebdnNp2i7NkJsc_Kp1TrcPLTk_Iy-UMJtg81KX8fUeumOSAQoGm5XAudBwo_dMbdwkS8KfPU8kC9EV2xJysEmORp4NDI5acRjzWUh1-7M1PtJnL-GkhJa7porC-g5oyDspFdaXjLnegMecBsdsX8-GJsdajAfmiwGYJ0MBVSA5UIvKG8g3juQbO2HN_FEujURvikR5peWHSCJjxOfpLLxLsIxPt2Qq1Ds_Hj2p_2STp-M6lvydvvqy2K8L4XX0I20p38aI0QMUi1WB0K5n-Z8W8ceNa1M"
   timeout_seconds: 30
 
 ollama:
   url: "http://localhost:11434"
-  model: "llama3.2"
+  model: "qwen3.5:2b"
   timeout_seconds: 120
+  is_thinking_model: true  # Qwen3 emits <think>…</think> blocks before the JSON answer
 
 fingerprint:
   db_path: "~/.ffiii-importer/fingerprints.db"

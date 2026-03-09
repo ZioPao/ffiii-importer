@@ -33,19 +33,33 @@ def build_payload(
     txn: RawTransaction,
     category_name: str | None,
     budget_name: str | None,
+    destination_account_id: str | None = None,
 ) -> dict:
     amount = abs(txn.amount)
-    txn_type = "withdrawal" if txn.amount < Decimal("0") else "deposit"
+
+    if destination_account_id is not None:
+        txn_type = "transfer"
+        source_id = txn.source_account_id
+        dest_id = destination_account_id
+    elif txn.amount < Decimal("0"):
+        txn_type = "withdrawal"
+        source_id = txn.source_account_id
+        dest_id = None
+    else:
+        txn_type = "deposit"
+        source_id = None
+        dest_id = txn.source_account_id
 
     split = FireflyTransactionSplit(
         type=txn_type,
         date=txn.date,
         amount=str(amount),
         description=txn.description,
-        source_id=txn.source_account_id if txn_type == "withdrawal" else None,
-        destination_id=txn.source_account_id if txn_type == "deposit" else None,
-        category_name=category_name,
-        budget_name=budget_name,
+        source_id=source_id,
+        destination_id=dest_id,
+        # Transfers don't use categories or budgets in Firefly
+        category_name=category_name if txn_type != "transfer" else None,
+        budget_name=budget_name if txn_type != "transfer" else None,
         notes=txn.notes,
         currency_code=txn.currency,
         external_id=txn.fingerprint,
@@ -60,6 +74,7 @@ def push_transaction(
     txn: RawTransaction,
     category_name: str | None,
     budget_name: str | None,
+    destination_account_id: str | None = None,
 ) -> dict:
-    payload = build_payload(txn, category_name, budget_name)
+    payload = build_payload(txn, category_name, budget_name, destination_account_id)
     return client.create_transaction(payload)

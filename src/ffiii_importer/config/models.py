@@ -21,6 +21,7 @@ class OllamaConfig(BaseModel):
     url: str = "http://localhost:11434"
     model: str
     timeout_seconds: int = 120
+    is_thinking_model: bool = False  # set True for models that emit <think>…</think> blocks (deepseek-r1, qwq, etc.)
 
 
 class FingerprintConfig(BaseModel):
@@ -56,6 +57,15 @@ class ColumnMapping(BaseModel):
     currency: str | None = None
 
 
+class TransferRule(BaseModel):
+    """Global transfer rule: if description matches `pattern` (and optionally the source account
+    matches `from_account_id`), the transaction is pushed as a transfer to `to_account_id`."""
+
+    pattern: str  # Python regex, matched case-insensitively against the description
+    to_account_id: str
+    from_account_id: str | None = None  # if set, only matches transactions from this account
+
+
 class BankMapping(BaseModel):
     account_id: str
     encoding: str = "utf-8"
@@ -68,7 +78,6 @@ class BankMapping(BaseModel):
     @field_validator("columns")
     @classmethod
     def validate_amount_columns(cls, v: ColumnMapping, info: object) -> ColumnMapping:
-        # access the sibling field via info.data
         data = getattr(info, "data", {})
         col_type = data.get("amount_column_type")
         if col_type == "single" and v.amount is None:
@@ -81,4 +90,5 @@ class BankMapping(BaseModel):
 
 
 class BankMappingsFile(BaseModel):
+    transfers: list[TransferRule] = Field(default_factory=list)
     banks: dict[str, BankMapping]

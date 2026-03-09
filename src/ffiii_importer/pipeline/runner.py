@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -8,7 +9,8 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from ..config.models import AppSettings, BankMapping
+from ..config.models import AppSettings, BankMapping, TransferRule
+from ..csv_reader.models import RawTransaction
 from ..csv_reader.normalizer import parse_csv
 from ..fingerprint import store as fp_store
 from ..firefly.client import FireflyClient
@@ -40,14 +42,26 @@ class ImportStats:
         console.print(table)
 
 
+def _match_transfer(txn: RawTransaction, transfer_rules: list[TransferRule]) -> str | None:
+    """Return to_account_id if the transaction matches a global transfer rule, else None."""
+    for rule in transfer_rules:
+        if rule.from_account_id and rule.from_account_id != txn.source_account_id:
+            continue
+        if re.search(rule.pattern, txn.description, re.IGNORECASE):
+            return rule.to_account_id
+    return None
+
+
 def run_import(
     settings: AppSettings,
     bank_mapping: BankMapping,
     csv_files: list[Path],
+    transfer_rules: list[TransferRule] | None = None,
     dry_run: bool = False,
 ) -> ImportStats:
     stats = ImportStats()
     effective_dry_run = dry_run or settings.import_.dry_run
+    _transfer_rules = transfer_rules or []
 
     # 1. Open fingerprint DB
     db_conn = fp_store.open_db(settings.fingerprint.db_path)
@@ -108,6 +122,35 @@ def run_import(
                             f"  [yellow]SKIP[/] duplicate: {txn.date} | {txn.description[:50]}"
                         )
                         stats.skipped_duplicate += 1
+                        progress.advance(task)
+                        continue
+
+                    # Transfer detection (bypasses LLM — transfers have no category/budget)
+                    destination_account_id = _match_transfer(txn, _transfer_rules)
+                    if destination_account_id is not None:
+                        label = f"[magenta]transfer → account {destination_account_id}[/]"
+                        if effective_dry_run:
+                            console.print(
+                                f"  [cyan]DRY[/] {txn.date} | {txn.amount:>10} | "
+                                f"{txn.description[:40]} → {label}"
+                            )
+                            stats.dry_run += 1
+                            progress.advance(task)
+                            continue
+                        try:
+                            push_transaction(firefly, txn, None, None, destination_account_id)
+                            fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
+                            console.print(
+                                f"  [green]OK[/]  {txn.date} | {txn.amount:>10} | "
+                                f"{txn.description[:40]} → {label}"
+                            )
+                            stats.imported += 1
+                        except httpx.HTTPStatusError as e:
+                            console.print(
+                                f"  [red]FAIL[/] {txn.date} | {txn.description[:40]} — "
+                                f"HTTP {e.response.status_code}: {e.response.text[:120]}"
+                            )
+                            stats.failed += 1
                         progress.advance(task)
                         continue
 

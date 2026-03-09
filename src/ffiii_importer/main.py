@@ -18,8 +18,11 @@ app = typer.Typer(
 )
 console = Console()
 
-DEFAULT_SETTINGS = Path("config/settings.yaml")
-DEFAULT_MAPPINGS = Path("config/bank_mappings.yaml")
+# Resolve config defaults relative to the project root (two levels up from this file:
+# src/ffiii_importer/main.py → src/ffiii_importer → src → project root)
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+DEFAULT_SETTINGS = _PROJECT_ROOT / "config" / "settings.yaml"
+DEFAULT_MAPPINGS = _PROJECT_ROOT / "config" / "bank_mappings.yaml"
 
 
 @app.command()
@@ -49,7 +52,7 @@ def import_csv(
             console.print(f"[red]File not found:[/] {f}")
         raise typer.Exit(1)
 
-    stats = run_import(settings, bank_mapping, files, dry_run=dry_run)
+    stats = run_import(settings, bank_mapping, files, bank_mappings.transfers, dry_run=dry_run)
     stats.print_summary()
 
     if stats.failed > 0:
@@ -73,6 +76,40 @@ def list_banks(
         table.add_row(key, bm.account_id, bm.amount_column_type, bm.date_format)
 
     console.print(table)
+
+
+@app.command("list-accounts")
+def list_accounts(
+    config: Annotated[Path, typer.Option("--config", help="Path to settings.yaml")] = DEFAULT_SETTINGS,
+) -> None:
+    """List all asset accounts in FireflyIII with their IDs (use these in bank_mappings.yaml)."""
+    settings = load_settings(config)
+
+    import httpx
+    console.print(f"Fetching accounts from [cyan]{settings.firefly.url}[/]...")
+    try:
+        with FireflyClient(settings.firefly.url, settings.firefly.token, settings.firefly.timeout_seconds) as client:
+            accounts = list(client._get_all_pages("/api/v1/accounts"))
+    except httpx.HTTPError as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1)
+
+    # Group by type
+    by_type: dict[str, list[tuple[str, str]]] = {}
+    for acc in accounts:
+        attrs = acc.get("attributes", {})
+        acc_type = attrs.get("type", "unknown")
+        acc_id = str(acc.get("id", "?"))
+        acc_name = attrs.get("name", "?")
+        by_type.setdefault(acc_type, []).append((acc_id, acc_name))
+
+    for acc_type, entries in sorted(by_type.items()):
+        table = Table(title=f"[bold]{acc_type}[/]")
+        table.add_column("ID", style="bold cyan", width=6)
+        table.add_column("Name")
+        for acc_id, acc_name in sorted(entries, key=lambda x: int(x[0]) if x[0].isdigit() else 0):
+            table.add_row(acc_id, acc_name)
+        console.print(table)
 
 
 @app.command("check-config")
