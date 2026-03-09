@@ -14,7 +14,7 @@ from ..csv_reader.models import RawTransaction
 from ..csv_reader.normalizer import parse_csv
 from ..fingerprint import store as fp_store
 from ..firefly.client import FireflyClient
-from ..firefly.service import fetch_asset_accounts, fetch_budgets, fetch_categories, push_transaction, transaction_exists
+from ..firefly.service import fetch_asset_accounts, fetch_budgets, fetch_categories, push_transaction
 from ..ollama.categorizer import Categorizer
 
 console = Console()
@@ -158,14 +158,6 @@ def run_import(
                             stats.dry_run += 1
                             progress.advance(task)
                             continue
-                        if transaction_exists(firefly, txn):
-                            console.print(
-                                f"  [yellow]SKIP[/] exists in Firefly: {txn.date} | {txn.description[:50]}"
-                            )
-                            fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
-                            stats.skipped_duplicate += 1
-                            progress.advance(task)
-                            continue
                         try:
                             push_transaction(firefly, txn, None, None, destination_account_id)
                             fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
@@ -213,14 +205,6 @@ def run_import(
                         continue
 
                     # Push to Firefly
-                    if transaction_exists(firefly, txn):
-                        console.print(
-                            f"  [yellow]SKIP[/] exists in Firefly: {txn.date} | {txn.description[:50]}"
-                        )
-                        fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
-                        stats.skipped_duplicate += 1
-                        progress.advance(task)
-                        continue
                     try:
                         push_transaction(firefly, txn, result.category, result.budget)
                         fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
