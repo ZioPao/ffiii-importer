@@ -1,0 +1,16 @@
+firefly:
+  url: "https://firefly.example.com"  # no trailing slash
+  token: "your_personal_access_token"
+  timeout_seconds: 30
+
+ollama:
+  url: "http://localhost:11434"
+  model: "llama3.2"
+  timeout_seconds: 120
+
+fingerprint:
+  db_path: "~/.ffiii-importer/fingerprints.db"
+
+import:
+  dry_run: false
+  skip_unknown_category: false
