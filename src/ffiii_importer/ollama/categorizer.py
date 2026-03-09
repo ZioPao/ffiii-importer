@@ -19,7 +19,7 @@ based on its description, date, and amount.
 
 Rules:
 - The "category" field MUST be exactly one of the category names listed below. If nothing fits well, use "Various".
-- The "budget" field MUST be exactly one of the budget names listed below. If nothing fits well, use "Various". If there are no budgets listed, use null.
+- The "budget" field MUST be exactly one of the budget names listed below. If nothing fits well, use "Various". If there are no budgets listed, or if the transaction amount is positive (income/deposit), use null.
 - The "confidence" field must be a float between 0.0 and 1.0.
 - The "reasoning" field is a brief one-sentence explanation of your choice.
 - Your final answer MUST be a single JSON object. No extra text after the JSON.
@@ -46,20 +46,9 @@ Respond with a single JSON object matching this schema:
 
 
 def _extract_json(text: str) -> str:
-    """
-    Extract the first JSON object from `text`, tolerating:
-    - <think>…</think> blocks emitted by thinking models
-    - markdown code fences (```json … ```)
-    - leading/trailing prose
-    """
-    # Strip thinking blocks (greedy is fine — there's only one per response)
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-
-    # Strip markdown fences
     text = re.sub(r"```(?:json)?\s*", "", text)
     text = re.sub(r"```", "", text)
-
-    # Find the first {...} object (handles nested braces)
     depth = 0
     start = None
     for i, ch in enumerate(text):
@@ -71,7 +60,6 @@ def _extract_json(text: str) -> str:
             depth -= 1
             if depth == 0 and start is not None:
                 return text[start : i + 1]
-
     return text.strip()
 
 
@@ -85,7 +73,7 @@ class Categorizer:
         self._config = config
         self._categories = categories
         self._budgets = budgets
-        self._client = ollama.Client(host=config.url)
+        self._client = ollama.Client(host=config.url, timeout=config.timeout_seconds)
         self._system_prompt = _SYSTEM_TEMPLATE.format(
             categories="\n".join(f"- {name}" for name in sorted(categories)) or "(none)",
             budgets="\n".join(f"- {name}" for name in sorted(budgets)) or "(none)",
@@ -101,34 +89,54 @@ class Categorizer:
         )
 
         options: dict = {"temperature": 0.1}
-        # Thinking models have their own internal reasoning temperature; nudging
-        # the output temperature to 0 keeps the final JSON answer deterministic.
         if self._config.is_thinking_model:
             options["temperature"] = 0
 
+        chat_kwargs: dict = {
+            "model": self._config.model,
+            "messages": [
+                {"role": "system", "content": self._system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            "options": options,
+        }
+        if not self._config.is_thinking_model:
+            chat_kwargs["format"] = "json"
+
+        if self._config.verbose:
+            print(f"\n[LLM] {txn.description[:60]}", flush=True)
+
         try:
-            response = self._client.chat(
-                model=self._config.model,
-                messages=[
-                    {"role": "system", "content": self._system_prompt},
-                    {"role": "user", "content": user_msg},
-                ],
-                # format="json" is not supported by most thinking models — skip it for them
-                **({"format": "json"} if not self._config.is_thinking_model else {}),
-                options=options,
-            )
-            raw_text = response.message.content or ""
-        except Exception:
+            in_thinking = False
+            raw_text = ""
+            for chunk in self._client.chat(**chat_kwargs, stream=True):
+
+                # if chunk.message.thinking:
+                #     if not in_thinking:
+                #         in_thinking = True
+                #         print('Thinking:\n', end='', flush=True)
+                #     print(chunk.message.thinking, end='', flush=True)
+                token = chunk.message.content or ""
+                raw_text += token
+                if self._config.verbose:
+                    print(token, end="", flush=True)
+                if len(raw_text) > 8_000:
+                    print("\n[LLM] truncated at 8000 chars", flush=True)
+                    return _FALLBACK
+            if self._config.verbose:
+                print(flush=True)
+        except Exception as exc:
+            print(f"\n[LLM] error: {exc}", flush=True)
             return _FALLBACK
 
         json_text = _extract_json(raw_text)
 
         try:
             result = LLMCategorizationResult.model_validate_json(json_text)
-        except (ValidationError, json.JSONDecodeError):
+        except (ValidationError, json.JSONDecodeError) as exc:
+            print(f"\n[LLM] parse failed: {exc}\nraw: {raw_text[:300]}", flush=True)
             return _FALLBACK
 
-        # Validate returned names against known values; nullify if hallucinated
         if result.category and result.category not in self._categories:
             result = result.model_copy(update={"category": None, "confidence": 0.0})
         if result.budget and result.budget not in self._budgets:

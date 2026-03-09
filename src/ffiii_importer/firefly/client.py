@@ -50,6 +50,13 @@ class FireflyClient:
     # Domain methods
     # ------------------------------------------------------------------
 
+    def get_accounts(self, account_type: str = "asset") -> list[dict[str, Any]]:
+        return list(self._get_all_pages(f"/api/v1/accounts?type={account_type}"))
+
+    def get_transactions(self, start: str, end: str) -> list[dict[str, Any]]:
+        """Return all transactions in [start, end] (ISO date strings)."""
+        return list(self._get_all_pages(f"/api/v1/transactions?start={start}&end={end}"))
+
     def get_categories(self) -> list[dict[str, Any]]:
         return list(self._get_all_pages("/api/v1/categories"))
 

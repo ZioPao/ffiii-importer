@@ -5,9 +5,10 @@ firefly:
 
 ollama:
   url: "http://localhost:11434"
-  model: "qwen3.5:2b"
+  model: "phi4-mini:3.8b"
   timeout_seconds: 120
-  is_thinking_model: true  # Qwen3 emits <think>…</think> blocks before the JSON answer
+  is_thinking_model: false  # Qwen3 emits <think>…</think> blocks before the JSON answer
+  verbose: true  # stream tokens live and show raw output for debugging
 
 fingerprint:
   db_path: "~/.ffiii-importer/fingerprints.db"

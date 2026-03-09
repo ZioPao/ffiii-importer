@@ -18,6 +18,18 @@ def fetch_categories(client: FireflyClient) -> dict[str, str]:
     return result
 
 
+def fetch_asset_accounts(client: FireflyClient) -> dict[str, str]:
+    """Return {iban: account_id} for all asset accounts that have an IBAN."""
+    result: dict[str, str] = {}
+    for item in client.get_accounts("asset"):
+        acct_id = str(item["id"])
+        attrs = item.get("attributes", {})
+        iban = attrs.get("iban") or ""
+        if iban:
+            result[iban.upper()] = acct_id
+    return result
+
+
 def fetch_budgets(client: FireflyClient) -> dict[str, str]:
     """Return {name: id} for all Firefly budgets."""
     result: dict[str, str] = {}
@@ -27,6 +39,20 @@ def fetch_budgets(client: FireflyClient) -> dict[str, str]:
         if name:
             result[name] = bud_id
     return result
+
+
+def transaction_exists(client: FireflyClient, txn: RawTransaction) -> bool:
+    """Return True if Firefly already has a transaction on the same date with the same amount."""
+    date_str = txn.date.isoformat()
+    amount = abs(txn.amount)
+    for item in client.get_transactions(date_str, date_str):
+        for split in item.get("attributes", {}).get("transactions", []):
+            try:
+                if Decimal(split.get("amount", "0")) == amount:
+                    return True
+            except Exception:
+                continue
+    return False
 
 
 def build_payload(
@@ -57,16 +83,16 @@ def build_payload(
         description=txn.description,
         source_id=source_id,
         destination_id=dest_id,
-        # Transfers don't use categories or budgets in Firefly
+        # Transfers and deposits don't use budgets in Firefly
         category_name=category_name if txn_type != "transfer" else None,
-        budget_name=budget_name if txn_type != "transfer" else None,
+        budget_name=budget_name if txn_type == "withdrawal" else None,
         notes=txn.notes,
         currency_code=txn.currency,
         external_id=txn.fingerprint,
     )
 
     payload = FireflyTransactionPayload(transactions=[split])
-    return payload.model_dump(exclude_none=True)
+    return payload.model_dump(mode="json", exclude_none=True)
 
 
 def push_transaction(

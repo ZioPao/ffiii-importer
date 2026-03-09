@@ -14,7 +14,7 @@ from ..csv_reader.models import RawTransaction
 from ..csv_reader.normalizer import parse_csv
 from ..fingerprint import store as fp_store
 from ..firefly.client import FireflyClient
-from ..firefly.service import fetch_budgets, fetch_categories, push_transaction
+from ..firefly.service import fetch_asset_accounts, fetch_budgets, fetch_categories, push_transaction, transaction_exists
 from ..ollama.categorizer import Categorizer
 
 console = Console()
@@ -42,13 +42,31 @@ class ImportStats:
         console.print(table)
 
 
-def _match_transfer(txn: RawTransaction, transfer_rules: list[TransferRule]) -> str | None:
-    """Return to_account_id if the transaction matches a global transfer rule, else None."""
+def _find_transfer_destination(
+    txn: RawTransaction,
+    iban_to_account: dict[str, str],
+    transfer_rules: list[TransferRule],
+) -> str | None:
+    """Return destination account_id if the transaction is an internal transfer.
+
+    Detection order:
+    1. IBAN scan: if any known asset-account IBAN appears in description or notes,
+       it's a transfer to that account (skip source account's own IBAN).
+    2. Pattern rules: fallback for banks that don't embed IBANs in descriptions.
+    """
+    haystack = f"{txn.description} {txn.notes or ''}".upper()
+    for iban, account_id in iban_to_account.items():
+        if account_id == txn.source_account_id:
+            continue
+        if iban in haystack:
+            return account_id
+
     for rule in transfer_rules:
         if rule.from_account_id and rule.from_account_id != txn.source_account_id:
             continue
         if re.search(rule.pattern, txn.description, re.IGNORECASE):
             return rule.to_account_id
+
     return None
 
 
@@ -76,11 +94,13 @@ def run_import(
         try:
             categories = fetch_categories(firefly)
             budgets = fetch_budgets(firefly)
+            iban_to_account = fetch_asset_accounts(firefly)
         except httpx.HTTPError as e:
             raise SystemExit(f"Failed to fetch data from FireflyIII: {e}")
 
     console.print(
-        f"  Loaded [cyan]{len(categories)}[/] categories, [cyan]{len(budgets)}[/] budgets."
+        f"  Loaded [cyan]{len(categories)}[/] categories, [cyan]{len(budgets)}[/] budgets, "
+        f"[cyan]{len(iban_to_account)}[/] accounts with IBAN."
     )
 
     # 3. Build Ollama categorizer (loaded once with the full category/budget lists)
@@ -105,6 +125,7 @@ def run_import(
             BarColumn(),
             MofNCompleteColumn(),
             console=console,
+            disable=settings.ollama.verbose,
         ) as progress:
             task = progress.add_task("Processing...", total=len(transactions))
 
@@ -126,7 +147,7 @@ def run_import(
                         continue
 
                     # Transfer detection (bypasses LLM — transfers have no category/budget)
-                    destination_account_id = _match_transfer(txn, _transfer_rules)
+                    destination_account_id = _find_transfer_destination(txn, iban_to_account, _transfer_rules)
                     if destination_account_id is not None:
                         label = f"[magenta]transfer → account {destination_account_id}[/]"
                         if effective_dry_run:
@@ -135,6 +156,14 @@ def run_import(
                                 f"{txn.description[:40]} → {label}"
                             )
                             stats.dry_run += 1
+                            progress.advance(task)
+                            continue
+                        if transaction_exists(firefly, txn):
+                            console.print(
+                                f"  [yellow]SKIP[/] exists in Firefly: {txn.date} | {txn.description[:50]}"
+                            )
+                            fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
+                            stats.skipped_duplicate += 1
                             progress.advance(task)
                             continue
                         try:
@@ -156,6 +185,11 @@ def run_import(
 
                     # LLM categorization
                     result = categorizer.categorize(txn)
+                    if result.category is None and result.budget is None and result.confidence == 0.0:
+                        console.print(
+                            f"  [red]LLM[/] fallback (no valid response): "
+                            f"{txn.date} | {txn.description[:50]}"
+                        )
 
                     # Skip if category is required but unknown
                     if settings.import_.skip_unknown_category and result.category is None:
@@ -179,6 +213,14 @@ def run_import(
                         continue
 
                     # Push to Firefly
+                    if transaction_exists(firefly, txn):
+                        console.print(
+                            f"  [yellow]SKIP[/] exists in Firefly: {txn.date} | {txn.description[:50]}"
+                        )
+                        fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
+                        stats.skipped_duplicate += 1
+                        progress.advance(task)
+                        continue
                     try:
                         push_transaction(firefly, txn, result.category, result.budget)
                         fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
