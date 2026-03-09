@@ -63,6 +63,9 @@ class FireflyClient:
     def get_budgets(self) -> list[dict[str, Any]]:
         return list(self._get_all_pages("/api/v1/budgets"))
 
+    def get_tags(self) -> list[dict[str, Any]]:
+        return list(self._get_all_pages("/api/v1/tags"))
+
     def create_transaction(self, payload: dict[str, Any]) -> dict[str, Any]:
         resp = self._client.post("/api/v1/transactions", json=payload)
         resp.raise_for_status()

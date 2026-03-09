@@ -30,6 +30,17 @@ def fetch_asset_accounts(client: FireflyClient) -> dict[str, str]:
     return result
 
 
+def fetch_expense_accounts(client: FireflyClient) -> dict[str, str]:
+    """Return {name: account_id} for all expense accounts."""
+    result: dict[str, str] = {}
+    for item in client.get_accounts("expense"):
+        acct_id = str(item["id"])
+        name = item.get("attributes", {}).get("name", "")
+        if name:
+            result[name] = acct_id
+    return result
+
+
 def fetch_budgets(client: FireflyClient) -> dict[str, str]:
     """Return {name: id} for all Firefly budgets."""
     result: dict[str, str] = {}
@@ -38,6 +49,17 @@ def fetch_budgets(client: FireflyClient) -> dict[str, str]:
         name = item.get("attributes", {}).get("name", "")
         if name:
             result[name] = bud_id
+    return result
+
+
+def fetch_tags(client: FireflyClient) -> dict[str, str]:
+    """Return {tag: id} for all Firefly tags."""
+    result: dict[str, str] = {}
+    for item in client.get_tags():
+        tag_id = str(item["id"])
+        tag = item.get("attributes", {}).get("tag", "")
+        if tag:
+            result[tag] = tag_id
     return result
 
 
@@ -60,6 +82,8 @@ def build_payload(
     category_name: str | None,
     budget_name: str | None,
     destination_account_id: str | None = None,
+    tags: list[str] | None = None,
+    expense_destination_id: str | None = None,
 ) -> dict:
     amount = abs(txn.amount)
 
@@ -70,7 +94,7 @@ def build_payload(
     elif txn.amount < Decimal("0"):
         txn_type = "withdrawal"
         source_id = txn.source_account_id
-        dest_id = None
+        dest_id = expense_destination_id  # may be None (Firefly auto-creates)
     else:
         txn_type = "deposit"
         source_id = None
@@ -89,6 +113,7 @@ def build_payload(
         notes=txn.notes,
         currency_code=txn.currency,
         external_id=txn.fingerprint,
+        tags=tags if tags else None,
     )
 
     payload = FireflyTransactionPayload(transactions=[split])
@@ -101,6 +126,8 @@ def push_transaction(
     category_name: str | None,
     budget_name: str | None,
     destination_account_id: str | None = None,
+    tags: list[str] | None = None,
+    expense_destination_id: str | None = None,
 ) -> dict:
-    payload = build_payload(txn, category_name, budget_name, destination_account_id)
+    payload = build_payload(txn, category_name, budget_name, destination_account_id, tags, expense_destination_id)
     return client.create_transaction(payload)

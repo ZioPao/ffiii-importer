@@ -23,6 +23,7 @@ class OllamaConfig(BaseModel):
     timeout_seconds: int = 120
     is_thinking_model: bool = False  # set True for models that emit <think>…</think> blocks (deepseek-r1, qwq, etc.)
     verbose: bool = False  # stream tokens live and print raw LLM output for debugging
+    notes: str | None = None  # extra context appended to every system prompt (e.g. locale hints, merchant rules)
 
 
 class FingerprintConfig(BaseModel):

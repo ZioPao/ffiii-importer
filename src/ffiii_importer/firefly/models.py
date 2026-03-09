@@ -29,6 +29,7 @@ class FireflyTransactionSplit(BaseModel):
     notes: str | None = None
     currency_code: str | None = None
     external_id: str | None = None  # store fingerprint here for Firefly-side dedup
+    tags: list[str] | None = None
 
 
 class FireflyTransactionPayload(BaseModel):

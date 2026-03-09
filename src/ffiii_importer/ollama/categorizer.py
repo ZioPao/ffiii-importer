@@ -10,16 +10,18 @@ from ..config.models import OllamaConfig
 from ..csv_reader.models import RawTransaction
 from .models import LLMCategorizationResult
 
-_FALLBACK = LLMCategorizationResult(category=None, budget=None, confidence=0.0)
+_FALLBACK = LLMCategorizationResult(category=None, budget=None, tags=[], destination_account=None, confidence=0.0)
 
 _SYSTEM_TEMPLATE = """\
 You are a financial transaction categorizer for a personal finance application.
-Your job is to assign a category and optionally a budget to a bank transaction
-based on its description, date, and amount.
+Your job is to assign a category, optionally a budget, zero or more tags, and a destination account \
+to a bank transaction based on its description, date, and amount.
 
 Rules:
 - The "category" field MUST be exactly one of the category names listed below. If nothing fits well, use "Various".
 - The "budget" field MUST be exactly one of the budget names listed below. If nothing fits well, use "Various". If there are no budgets listed, or if the transaction amount is positive (income/deposit), use null.
+- The "tags" field MUST be a JSON array of zero or more tag names from the list below. Only include tags that clearly apply. Use an empty array if none fit.
+- The "destination_account" field MUST be exactly one of the expense account names listed below, chosen based on the merchant or purpose of the transaction. If no account fits well, use "Cash".
 - The "confidence" field must be a float between 0.0 and 1.0.
 - The "reasoning" field is a brief one-sentence explanation of your choice.
 - Your final answer MUST be a single JSON object. No extra text after the JSON.
@@ -29,6 +31,12 @@ Available categories:
 
 Available budgets:
 {budgets}
+
+Available tags:
+{tags}
+
+Available expense accounts:
+{expense_accounts}
 """
 
 _USER_TEMPLATE = """\
@@ -40,6 +48,8 @@ Respond with a single JSON object matching this schema:
 {{
   "category": "<category name, or 'Various' if unsure>",
   "budget": "<budget name, or 'Various' if unsure, or null if no budgets exist>",
+  "tags": ["<tag name>", ...],
+  "destination_account": "<expense account name, or 'Cash' if unsure>",
   "confidence": <0.0 to 1.0>,
   "reasoning": "<one sentence>"
 }}"""
@@ -69,15 +79,23 @@ class Categorizer:
         config: OllamaConfig,
         categories: dict[str, str],
         budgets: dict[str, str],
+        tags: dict[str, str] | None = None,
+        expense_accounts: dict[str, str] | None = None,
     ) -> None:
         self._config = config
         self._categories = categories
         self._budgets = budgets
+        self._tags = tags or {}
+        self._expense_accounts = expense_accounts or {}
         self._client = ollama.Client(host=config.url, timeout=config.timeout_seconds)
         self._system_prompt = _SYSTEM_TEMPLATE.format(
             categories="\n".join(f"- {name}" for name in sorted(categories)) or "(none)",
             budgets="\n".join(f"- {name}" for name in sorted(budgets)) or "(none)",
+            tags="\n".join(f"- {name}" for name in sorted(self._tags)) or "(none)",
+            expense_accounts="\n".join(f"- {name}" for name in sorted(self._expense_accounts)) or "(none)",
         )
+        if config.notes:
+            self._system_prompt += f"\nAdditional context:\n{config.notes}\n"
 
     def categorize(self, txn: RawTransaction) -> LLMCategorizationResult:
         currency_part = f" {txn.currency}" if txn.currency else ""
@@ -141,5 +159,11 @@ class Categorizer:
             result = result.model_copy(update={"category": None, "confidence": 0.0})
         if result.budget and result.budget not in self._budgets:
             result = result.model_copy(update={"budget": None})
+        if result.tags:
+            valid_tags = [t for t in result.tags if t in self._tags]
+            if valid_tags != result.tags:
+                result = result.model_copy(update={"tags": valid_tags})
+        if result.destination_account and result.destination_account not in self._expense_accounts:
+            result = result.model_copy(update={"destination_account": None})
 
         return result

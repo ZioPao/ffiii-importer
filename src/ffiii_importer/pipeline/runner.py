@@ -14,7 +14,7 @@ from ..csv_reader.models import RawTransaction
 from ..csv_reader.normalizer import parse_csv
 from ..fingerprint import store as fp_store
 from ..firefly.client import FireflyClient
-from ..firefly.service import fetch_asset_accounts, fetch_budgets, fetch_categories, push_transaction
+from ..firefly.service import fetch_asset_accounts, fetch_budgets, fetch_categories, fetch_expense_accounts, fetch_tags, push_transaction
 from ..ollama.categorizer import Categorizer
 
 console = Console()
@@ -94,18 +94,21 @@ def run_import(
         try:
             categories = fetch_categories(firefly)
             budgets = fetch_budgets(firefly)
+            tags = fetch_tags(firefly)
+            expense_accounts = fetch_expense_accounts(firefly)
             iban_to_account = fetch_asset_accounts(firefly)
         except httpx.HTTPError as e:
             raise SystemExit(f"Failed to fetch data from FireflyIII: {e}")
 
     console.print(
         f"  Loaded [cyan]{len(categories)}[/] categories, [cyan]{len(budgets)}[/] budgets, "
+        f"[cyan]{len(tags)}[/] tags, [cyan]{len(expense_accounts)}[/] expense accounts, "
         f"[cyan]{len(iban_to_account)}[/] accounts with IBAN."
     )
 
-    # 3. Build Ollama categorizer (loaded once with the full category/budget lists)
+    # 3. Build Ollama categorizer (loaded once with the full category/budget/tag/account lists)
     console.print(f"[bold]Initializing Ollama[/] (model: {settings.ollama.model})...")
-    categorizer = Categorizer(settings.ollama, categories, budgets)
+    categorizer = Categorizer(settings.ollama, categories, budgets, tags, expense_accounts)
 
     # 4. Process each CSV file
     for csv_file in csv_files:
@@ -192,13 +195,24 @@ def run_import(
                         progress.advance(task)
                         continue
 
+                    # Resolve destination account name → id (Cash fallback for withdrawals)
+                    expense_dest_id: str | None = None
+                    expense_dest_label: str = "[dim]none[/]"
+                    if txn.amount < 0:
+                        dest_name = result.destination_account or "Cash"
+                        expense_dest_id = expense_accounts.get(dest_name) or expense_accounts.get("Cash")
+                        if expense_dest_id:
+                            expense_dest_label = f"[yellow]{dest_name}[/]"
+
                     category_label = f"[green]{result.category}[/]" if result.category else "[dim]none[/]"
                     budget_label = f"[blue]{result.budget}[/]" if result.budget else "[dim]none[/]"
+                    tags_label = f"[magenta]{', '.join(result.tags)}[/]" if result.tags else "[dim]none[/]"
 
                     if effective_dry_run:
                         console.print(
                             f"  [cyan]DRY[/] {txn.date} | {txn.amount:>10} | "
-                            f"{txn.description[:40]} → cat={category_label} bud={budget_label}"
+                            f"{txn.description[:40]} → cat={category_label} bud={budget_label} "
+                            f"tags={tags_label} dest={expense_dest_label}"
                         )
                         stats.dry_run += 1
                         progress.advance(task)
@@ -206,11 +220,12 @@ def run_import(
 
                     # Push to Firefly
                     try:
-                        push_transaction(firefly, txn, result.category, result.budget)
+                        push_transaction(firefly, txn, result.category, result.budget, tags=result.tags or None, expense_destination_id=expense_dest_id)
                         fp_store.record(db_conn, txn.fingerprint, txn.source_account_id, txn.description)
                         console.print(
                             f"  [green]OK[/]  {txn.date} | {txn.amount:>10} | "
-                            f"{txn.description[:40]} → cat={category_label} bud={budget_label}"
+                            f"{txn.description[:40]} → cat={category_label} bud={budget_label} "
+                            f"tags={tags_label} dest={expense_dest_label}"
                         )
                         stats.imported += 1
                     except httpx.HTTPStatusError as e:

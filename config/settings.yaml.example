@@ -1,0 +1,19 @@
+firefly:
+  url: "https://firefly.com"  # no trailing slash
+  token: ""
+  timeout_seconds: 30
+
+ollama:
+  url: "http://localhost:11434"
+  model: "ministral-3:14b"
+  timeout_seconds: 120
+  is_thinking_model: false  # Qwen3 emits <think>…</think> blocks before the JSON answer
+  verbose: true  # stream tokens live and show raw output for debugging
+  notes: |
+   Additional notes to be taken into consideration
+fingerprint:
+  db_path: "~/.ffiii-importer/fingerprints.db"
+
+import:
+  dry_run: false
+  skip_unknown_category: false
