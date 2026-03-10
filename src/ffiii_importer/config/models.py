@@ -74,7 +74,7 @@ class BankMapping(BaseModel):
     delimiter: str = ","
     skip_rows: int = 0
     date_format: str
-    amount_column_type: Literal["single", "split"]
+    amount_column_type: Literal["single", "split", "split_signed"]
     columns: ColumnMapping
 
     @field_validator("columns")
@@ -84,9 +84,9 @@ class BankMapping(BaseModel):
         col_type = data.get("amount_column_type")
         if col_type == "single" and v.amount is None:
             raise ValueError("columns.amount is required when amount_column_type is 'single'")
-        if col_type == "split" and (v.debit is None or v.credit is None):
+        if col_type in ("split", "split_signed") and (v.debit is None or v.credit is None):
             raise ValueError(
-                "columns.debit and columns.credit are required when amount_column_type is 'split'"
+                f"columns.debit and columns.credit are required when amount_column_type is '{col_type}'"
             )
         return v
 

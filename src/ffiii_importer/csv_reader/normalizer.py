@@ -13,10 +13,20 @@ from .models import RawTransaction
 
 
 def _parse_amount(value: str) -> Decimal:
-    """Parse a numeric string that may contain currency symbols or spaces."""
-    cleaned = value.strip().replace(" ", "").replace(",", ".")
-    # Remove any non-numeric chars except leading minus and decimal point
-    # Keep digits, dot, and optional leading minus
+    """Parse a numeric string, handling both standard (1,000.00) and European (1.000,00) formats."""
+    cleaned = value.strip().lstrip("+")
+
+    last_comma = cleaned.rfind(",")
+    last_period = cleaned.rfind(".")
+
+    if last_comma > last_period:
+        # European format: period = thousands sep, comma = decimal sep (e.g. "1.000,00")
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    else:
+        # Standard format: comma = thousands sep (e.g. "1,000.00"), or no commas
+        cleaned = cleaned.replace(",", "")
+
+    # Keep only digits, decimal point, and optional leading minus
     filtered = ""
     for i, ch in enumerate(cleaned):
         if ch == "-" and i == 0:
@@ -59,6 +69,8 @@ def parse_csv(file_path: Path, mapping: BankMapping) -> Iterator[RawTransaction]
         try:
             # Date
             raw_date = row[cols.date].strip()
+            if not raw_date:
+                continue  # skip summary/header rows with no date (e.g. opening/closing balance rows)
             txn_date = datetime.strptime(raw_date, mapping.date_format).date()
 
             # Description
@@ -68,14 +80,22 @@ def parse_csv(file_path: Path, mapping: BankMapping) -> Iterator[RawTransaction]
             if mapping.amount_column_type == "single":
                 assert cols.amount is not None
                 amount = _parse_amount(row[cols.amount])
-            else:
+            elif mapping.amount_column_type == "split":
                 assert cols.debit is not None and cols.credit is not None
                 debit_str = row[cols.debit].strip()
                 credit_str = row[cols.credit].strip()
                 debit = _parse_amount(debit_str) if debit_str else Decimal("0")
                 credit = _parse_amount(credit_str) if credit_str else Decimal("0")
-                # debit = money out (negative), credit = money in (positive)
+                # debit column holds a positive value (money out), credit holds a positive value (money in)
                 amount = credit - debit
+            else:  # split_signed
+                assert cols.debit is not None and cols.credit is not None
+                debit_str = row[cols.debit].strip()
+                credit_str = row[cols.credit].strip()
+                debit = _parse_amount(debit_str) if debit_str else Decimal("0")
+                credit = _parse_amount(credit_str) if credit_str else Decimal("0")
+                # Both columns are already signed: debit is negative, credit is positive
+                amount = debit + credit
 
             # Optional fields
             notes: str | None = None
