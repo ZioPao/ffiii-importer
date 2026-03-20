@@ -83,7 +83,7 @@ def build_payload(
     budget_name: str | None,
     destination_account_id: str | None = None,
     tags: list[str] | None = None,
-    expense_destination_id: str | None = None,
+    expense_destination_name: str | None = None,
 ) -> dict:
     amount = abs(txn.amount)
 
@@ -91,14 +91,17 @@ def build_payload(
         txn_type = "transfer"
         source_id = txn.source_account_id
         dest_id = destination_account_id
+        dest_name = None
     elif txn.amount < Decimal("0"):
         txn_type = "withdrawal"
         source_id = txn.source_account_id
-        dest_id = expense_destination_id  # may be None (Firefly auto-creates)
+        dest_id = None
+        dest_name = expense_destination_name  # may be None (Firefly auto-creates)
     else:
         txn_type = "deposit"
         source_id = None
         dest_id = txn.source_account_id
+        dest_name = None
 
     split = FireflyTransactionSplit(
         type=txn_type,
@@ -107,6 +110,7 @@ def build_payload(
         description=txn.description,
         source_id=source_id,
         destination_id=dest_id,
+        destination_name=dest_name,
         # Transfers and deposits don't use budgets in Firefly
         category_name=category_name if txn_type != "transfer" else None,
         budget_name=budget_name if txn_type == "withdrawal" else None,
@@ -127,7 +131,7 @@ def push_transaction(
     budget_name: str | None,
     destination_account_id: str | None = None,
     tags: list[str] | None = None,
-    expense_destination_id: str | None = None,
+    expense_destination_name: str | None = None,
 ) -> dict:
-    payload = build_payload(txn, category_name, budget_name, destination_account_id, tags, expense_destination_id)
+    payload = build_payload(txn, category_name, budget_name, destination_account_id, tags, expense_destination_name)
     return client.create_transaction(payload)

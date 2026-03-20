@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -10,6 +11,14 @@ from rich.table import Table
 from .config.loader import load_bank_mappings, load_settings
 from .firefly.client import FireflyClient
 from .pipeline.runner import run_import
+
+
+def _setup_logging(log_path: Path) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    logging.getLogger("ffiii_importer").addHandler(handler)
+    logging.getLogger("ffiii_importer").setLevel(logging.INFO)
 
 app = typer.Typer(
     name="ffiii-importer",
@@ -36,6 +45,8 @@ def import_csv(
     """Import one or more bank CSV files into FireflyIII."""
     settings = load_settings(config)
     bank_mappings = load_bank_mappings(mappings)
+
+    _setup_logging(settings.fingerprint.db_path.parent / "import.log")
 
     if bank not in bank_mappings.banks:
         available = ", ".join(bank_mappings.banks.keys())
@@ -147,3 +158,13 @@ def check_config(
             )
     except httpx.HTTPError as e:
         console.print(f"[red]✗[/] Ollama connection failed: {e}")
+
+
+@app.command("gui")
+def launch_gui(
+    config: Annotated[Path, typer.Option("--config", help="Path to settings.yaml")] = DEFAULT_SETTINGS,
+    mappings: Annotated[Path, typer.Option("--mappings", help="Path to bank_mappings.yaml")] = DEFAULT_MAPPINGS,
+) -> None:
+    """Launch the interactive TUI."""
+    from .gui.app import ImporterApp
+    ImporterApp(config_path=config, mappings_path=mappings).run()

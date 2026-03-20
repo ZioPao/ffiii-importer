@@ -4,3 +4,5 @@ ffiii-instance
 
 config/bank_mappings.yaml
 config/settings.yaml
+samples/*
+input/*

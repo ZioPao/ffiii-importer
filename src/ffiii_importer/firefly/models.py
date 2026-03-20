@@ -24,6 +24,7 @@ class FireflyTransactionSplit(BaseModel):
     description: str
     source_id: str | None = None
     destination_id: str | None = None
+    destination_name: str | None = None
     category_name: str | None = None
     budget_name: str | None = None
     notes: str | None = None
