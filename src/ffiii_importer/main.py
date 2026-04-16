@@ -41,6 +41,7 @@ def import_csv(
     config: Annotated[Path, typer.Option("--config", help="Path to settings.yaml")] = DEFAULT_SETTINGS,
     mappings: Annotated[Path, typer.Option("--mappings", help="Path to bank_mappings.yaml")] = DEFAULT_MAPPINGS,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview without pushing to Firefly")] = False,
+    no_dedup: Annotated[bool, typer.Option("--no-dedup", help="Skip duplicate checking and import all transactions")] = False,
 ) -> None:
     """Import one or more bank CSV files into FireflyIII."""
     settings = load_settings(config)
@@ -63,7 +64,7 @@ def import_csv(
             console.print(f"[red]File not found:[/] {f}")
         raise typer.Exit(1)
 
-    stats = run_import(settings, bank_mapping, files, bank_mappings.transfers, dry_run=dry_run)
+    stats = run_import(settings, bank_mapping, files, bank_mappings.transfers, dry_run=dry_run, skip_dedup=no_dedup)
     stats.print_summary()
 
     if stats.failed > 0:

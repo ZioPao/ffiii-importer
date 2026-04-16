@@ -79,13 +79,14 @@ def run_import(
     transfer_rules: list[TransferRule] | None = None,
     dry_run: bool = False,
     progress_enabled: bool = True,
+    skip_dedup: bool = False,
 ) -> ImportStats:
     stats = ImportStats()
     effective_dry_run = dry_run or settings.import_.dry_run
     _transfer_rules = transfer_rules or []
 
     file_names = ", ".join(f.name for f in csv_files)
-    log.info("=== Import session started | bank=%s files=[%s] dry_run=%s ===", bank_mapping.account_id, file_names, effective_dry_run)
+    log.info("=== Import session started | bank=%s files=[%s] dry_run=%s skip_dedup=%s ===", bank_mapping.account_id, file_names, effective_dry_run, skip_dedup)
 
     # 1. Open fingerprint DB
     db_conn = fp_store.open_db(settings.fingerprint.db_path)
@@ -153,7 +154,7 @@ def run_import(
                     progress.update(task, description=txn.description[:50])
 
                     # Dedup check
-                    if fp_store.is_duplicate(db_conn, txn.fingerprint):
+                    if not skip_dedup and fp_store.is_duplicate(db_conn, txn.fingerprint):
                         console.print(
                             f"  [yellow]SKIP[/] duplicate: {txn.date} | {txn.description[:50]}"
                         )
