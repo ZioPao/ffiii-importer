@@ -76,6 +76,7 @@ class BankMapping(BaseModel):
     date_format: str
     amount_column_type: Literal["single", "split", "split_signed"]
     columns: ColumnMapping
+    description_strip_prefixes: list[str] = []
 
     @field_validator("columns")
     @classmethod

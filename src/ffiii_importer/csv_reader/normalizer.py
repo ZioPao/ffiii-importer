@@ -75,6 +75,11 @@ def parse_csv(file_path: Path, mapping: BankMapping) -> Iterator[RawTransaction]
 
             # Description
             description = row[cols.description].strip()
+            fingerprint_description = description  # always based on original, pre-strip value
+            for prefix in mapping.description_strip_prefixes:
+                if description.lower().startswith(prefix.lower()):
+                    description = description[len(prefix):].strip()
+                    break
 
             # Amount
             if mapping.amount_column_type == "single":
@@ -106,7 +111,7 @@ def parse_csv(file_path: Path, mapping: BankMapping) -> Iterator[RawTransaction]
             if cols.currency and cols.currency in row:
                 currency = row[cols.currency].strip() or None
 
-            fingerprint = _compute_fingerprint(txn_date, amount, description, mapping.account_id)
+            fingerprint = _compute_fingerprint(txn_date, amount, fingerprint_description, mapping.account_id)
 
             yield RawTransaction(
                 date=txn_date,

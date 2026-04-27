@@ -125,7 +125,7 @@ def run_import(
         console.rule(f"[bold]{csv_file.name}[/]")
         log.info("--- Processing file: %s ---", csv_file.name)
         try:
-            transactions = list(parse_csv(csv_file, bank_mapping))
+            transactions = list(parse_csv(csv_file, bank_mapping))[::-1]
         except ValueError as e:
             console.print(f"[red]Parse error:[/] {e}")
             log.error("Parse error in %s: %s", csv_file.name, e)
