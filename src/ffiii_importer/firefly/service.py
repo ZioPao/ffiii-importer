@@ -63,6 +63,37 @@ def fetch_tags(client: FireflyClient) -> dict[str, str]:
     return result
 
 
+def fetch_firefly_transactions(
+    client: FireflyClient,
+    account_id: str,
+    start: str,
+    end: str,
+) -> list[dict]:
+    """Return transactions for an account as list of {date, amount (signed), description, external_id}."""
+    result = []
+    for item in client.get_account_transactions(account_id, start, end):
+        for split in item.get("attributes", {}).get("transactions", []):
+            source_id = str(split.get("source_id") or "")
+            dest_id = str(split.get("destination_id") or "")
+            try:
+                raw_amount = Decimal(split.get("amount", "0"))
+            except Exception:
+                raw_amount = Decimal("0")
+            if source_id == account_id:
+                amount = -raw_amount
+            elif dest_id == account_id:
+                amount = raw_amount
+            else:
+                continue
+            result.append({
+                "date": split.get("date", "")[:10],
+                "amount": amount,
+                "description": split.get("description", ""),
+                "external_id": split.get("external_id") or None,
+            })
+    return result
+
+
 def transaction_exists(client: FireflyClient, txn: RawTransaction) -> bool:
     """Return True if Firefly already has a transaction on the same date with the same amount."""
     date_str = txn.date.isoformat()

@@ -57,6 +57,10 @@ class FireflyClient:
         """Return all transactions in [start, end] (ISO date strings)."""
         return list(self._get_all_pages(f"/api/v1/transactions?start={start}&end={end}"))
 
+    def get_account_transactions(self, account_id: str, start: str, end: str) -> list[dict[str, Any]]:
+        """Return transactions for a specific account in [start, end] (ISO date strings)."""
+        return list(self._get_all_pages(f"/api/v1/accounts/{account_id}/transactions?start={start}&end={end}"))
+
     def get_categories(self) -> list[dict[str, Any]]:
         return list(self._get_all_pages("/api/v1/categories"))
 

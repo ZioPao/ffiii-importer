@@ -161,6 +161,41 @@ def check_config(
         console.print(f"[red]✗[/] Ollama connection failed: {e}")
 
 
+@app.command("reconcile")
+def reconcile_cmd(
+    bank: Annotated[str, typer.Option("--bank", help="Bank key from bank_mappings.yaml")],
+    files: Annotated[list[Path], typer.Option("--file", "-f", help="CSV file(s) to reconcile")],
+    start: Annotated[Optional[str], typer.Option("--start", help="Start date YYYY-MM-DD (inferred from CSV if omitted)")] = None,
+    end: Annotated[Optional[str], typer.Option("--end", help="End date YYYY-MM-DD (inferred from CSV if omitted)")] = None,
+    config: Annotated[Path, typer.Option("--config", help="Path to settings.yaml")] = DEFAULT_SETTINGS,
+    mappings: Annotated[Path, typer.Option("--mappings", help="Path to bank_mappings.yaml")] = DEFAULT_MAPPINGS,
+) -> None:
+    """Compare a bank CSV export against FireflyIII to find missing or extra transactions."""
+    from datetime import date as date_type
+    from .reconcile.runner import run_reconcile
+
+    settings = load_settings(config)
+    bank_mappings = load_bank_mappings(mappings)
+
+    _setup_logging(settings.fingerprint.db_path.parent / "import.log")
+
+    if bank not in bank_mappings.banks:
+        available = ", ".join(bank_mappings.banks.keys())
+        raise typer.BadParameter(f"Bank '{bank}' not found. Available banks: {available}", param_hint="--bank")
+
+    missing = [f for f in files if not f.exists()]
+    if missing:
+        for f in missing:
+            console.print(f"[red]File not found:[/] {f}")
+        raise typer.Exit(1)
+
+    start_date = date_type.fromisoformat(start) if start else None
+    end_date = date_type.fromisoformat(end) if end else None
+
+    result = run_reconcile(settings, bank_mappings.banks[bank], files, start_date, end_date)
+    result.print_summary()
+
+
 @app.command("gui")
 def launch_gui(
     config: Annotated[Path, typer.Option("--config", help="Path to settings.yaml")] = DEFAULT_SETTINGS,
