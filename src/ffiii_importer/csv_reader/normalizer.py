@@ -61,7 +61,8 @@ def parse_csv(file_path: Path, mapping: BankMapping) -> Iterator[RawTransaction]
     reader = csv.DictReader(io.StringIO("\n".join(lines)), delimiter=mapping.delimiter)
     cols = mapping.columns
 
-    for row_num, row in enumerate(reader, start=1):
+    for row_num, row in enumerate(reversed(list(reader)), start=1):
+    #for row_num, row in enumerate(reader, start=1):
         # Skip completely empty rows
         if not any(v.strip() for v in row.values()):
             continue
