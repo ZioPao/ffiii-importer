@@ -198,6 +198,7 @@ def run_import(
                     # LLM categorization
                     result = categorizer.categorize(txn)
                     if result.category is None and result.budget is None and result.confidence == 0.0:
+                        raise #TODO Fix this, but LLM should be necessary.
                         console.print(
                             f"  [red]LLM[/] fallback (no valid response): "
                             f"{txn.date} | {txn.description[:50]}"
